@@ -1,0 +1,42 @@
+{
+  "name": "ts-signal",
+  "version": "0.0.1",
+  "description": "Typescript-safe signals with utility functions",
+  "author": "Bart Huijgen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/barthuijgen/ts-signal.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "signal",
+    "typescript",
+    "Event",
+    "EventEmitter"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --emitDeclarationOnly && rolldown -c rolldown.config.ts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "rolldown": "1.0.0-rc.8",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
