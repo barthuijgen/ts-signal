@@ -121,7 +121,7 @@ Removes a specific handler. If no handler is provided, **clears all attached han
 
 Emits the payload synchronously to all currently attached handlers. Iteration over handlers is perfectly safe even if handlers mutate the listener list during their execution tick.
 
-#### `filter(predicate, signal?: AbortSignal)`
+#### `filter(predicate)`
 
 Returns a new filtered derived child `Signal`. Highly suitable for deep workflows.
 

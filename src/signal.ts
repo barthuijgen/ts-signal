@@ -157,17 +157,13 @@ export class Signal<T = void> {
   // 1. Overload for TypeScript Type Guards (Narrows the type)
   public filter<U extends T>(
     predicate: (payload: T) => payload is U,
-    signal?: AbortSignal,
   ): Signal<U>;
 
   // 2. Overload for standard boolean checks (Keeps the same type)
-  public filter(
-    predicate: (payload: T) => boolean,
-    signal?: AbortSignal,
-  ): Signal<T>;
+  public filter(predicate: (payload: T) => boolean): Signal<T>;
 
   // Implementation
-  public filter(predicate: (payload: T) => boolean, signal?: AbortSignal): any {
+  public filter(predicate: (payload: T) => boolean): any {
     const filteredSignal = new Signal<any>();
     let sub: (() => void) | undefined;
 
@@ -176,7 +172,7 @@ export class Signal<T = void> {
         if (predicate(payload)) {
           filteredSignal.post(payload);
         }
-      }, signal);
+      });
     };
 
     filteredSignal.onLastDetach = () => {

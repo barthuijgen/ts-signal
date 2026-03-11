@@ -265,13 +265,13 @@ test("Signal - filter should filter via boolean predicate", () => {
   assert.deepEqual(received, [2, 4]);
 });
 
-test("Signal - filter with AbortSignal stops child emissions", () => {
+test("Signal - filter with AbortSignal on attach stops child emissions", () => {
   const signal = new Signal<number>();
   const ac = new AbortController();
-  const childSignal = signal.filter((p) => p > 5, ac.signal);
+  const childSignal = signal.filter((p) => p > 5);
 
   const received: number[] = [];
-  childSignal.attach((payload) => received.push(payload));
+  childSignal.attach((payload) => received.push(payload), ac.signal);
 
   signal.post(10);
   assert.deepEqual(received, [10]);
