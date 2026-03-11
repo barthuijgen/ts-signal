@@ -1,18 +1,13 @@
 import { defineConfig } from "rolldown";
+import { dts } from "rolldown-plugin-dts";
 
 export default defineConfig({
   input: "src/index.ts",
   output: [
     {
-      file: "dist/index.js",
-      format: "esm",
-      sourcemap: true,
-    },
-    {
-      file: "dist/index.min.js",
-      format: "esm",
-      minify: true,
-      sourcemap: true,
+      dir: "dist",
+      format: "es",
     },
   ],
+  plugins: [dts()],
 });

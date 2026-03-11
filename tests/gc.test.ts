@@ -8,9 +8,9 @@ declare const globalThis: {
 const testGC = typeof globalThis.gc !== "undefined" ? test : test.skip;
 
 const runGarbageCleanup = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 10));
   globalThis.gc!();
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 10));
 };
 
 testGC(

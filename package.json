@@ -1,6 +1,6 @@
 {
   "name": "ts-signal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typescript-safe signals with utility functions",
   "author": "Bart Huijgen",
   "repository": {
@@ -19,22 +19,22 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./dist/*": "./dist/*"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc --emitDeclarationOnly && rolldown -c rolldown.config.ts",
+    "build": "tsc --noEmit && rolldown -c rolldown.config.ts",
     "test": "NODE_OPTIONS=\"--expose-gc\" vitest run",
     "test:coverage": "NODE_OPTIONS=\"--expose-gc\" vitest run --coverage"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.18",
-    "rolldown": "1.0.0-rc.8",
+    "rolldown": "1.0.0-rc.9",
+    "rolldown-plugin-dts": "^0.22.5",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   },
