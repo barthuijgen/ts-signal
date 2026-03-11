@@ -223,6 +223,39 @@ test("Signal - filter with AbortSignal stops child emissions", () => {
   assert.deepEqual(received, [10]);
 });
 
+test("Signal - pipe should transform emitted values", () => {
+  const signal = new Signal<{ type: "message"; message: string }>();
+
+  // Single transform function
+  const messages = signal.pipe((event) => event.message);
+
+  const received: string[] = [];
+  messages.attach((msg) => received.push(msg));
+
+  signal.post({ type: "message", message: "hello" });
+  signal.post({ type: "message", message: "world" });
+
+  assert.deepEqual(received, ["hello", "world"]);
+});
+
+test("Signal - pipe should compose multiple transform functions", () => {
+  const signal = new Signal<number>();
+
+  const resultSignal = signal.pipe(
+    (n) => n * 2,
+    (n) => n.toString(),
+    (s) => s + "!",
+  );
+
+  const received: string[] = [];
+  resultSignal.attach((msg) => received.push(msg));
+
+  signal.post(5);
+  signal.post(10);
+
+  assert.deepEqual(received, ["10!", "20!"]);
+});
+
 test("Signal - toStateful creates a StatefulSignal bound to parent", () => {
   const parent = new Signal<number>();
   const stateful = parent.toStateful(0);

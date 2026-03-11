@@ -122,6 +122,20 @@ stringOnly.attach((str) => {
 });
 ```
 
+#### `pipe(...fns)`
+
+Returns a new derived `Signal` by piping the emitted values through one or more transform functions. Strongly typed for up to 9 functions.
+
+```typescript
+const signal = new Signal<{type: 'message', message: string}>();
+
+// messages is inferred as Signal<string>
+const messages = signal.pipe(event => event.message);
+
+messages.attach(msg => console.log(msg));
+signal.post({type: 'message', message: 'Hello!'}); // Logs: "Hello!"
+```
+
 #### `toStateful(initialState: T): StatefulSignal<T>`
 
 Returns a new `StatefulSignal` paired to this generic signal, inherently proxying all new values into the stateful wrapper.

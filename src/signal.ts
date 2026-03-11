@@ -122,6 +122,82 @@ export class Signal<T = void> {
     return filteredSignal;
   }
 
+  // Pipe through one or more transform functions
+  public pipe<A>(fn1: (payload: T) => A): Signal<A>;
+  public pipe<A, B>(fn1: (payload: T) => A, fn2: (payload: A) => B): Signal<B>;
+  public pipe<A, B, C>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+  ): Signal<C>;
+  public pipe<A, B, C, D>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+    fn4: (payload: C) => D,
+  ): Signal<D>;
+  public pipe<A, B, C, D, E>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+    fn4: (payload: C) => D,
+    fn5: (payload: D) => E,
+  ): Signal<E>;
+  public pipe<A, B, C, D, E, F>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+    fn4: (payload: C) => D,
+    fn5: (payload: D) => E,
+    fn6: (payload: E) => F,
+  ): Signal<F>;
+  public pipe<A, B, C, D, E, F, G>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+    fn4: (payload: C) => D,
+    fn5: (payload: D) => E,
+    fn6: (payload: E) => F,
+    fn7: (payload: F) => G,
+  ): Signal<G>;
+  public pipe<A, B, C, D, E, F, G, H>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+    fn4: (payload: C) => D,
+    fn5: (payload: D) => E,
+    fn6: (payload: E) => F,
+    fn7: (payload: F) => G,
+    fn8: (payload: G) => H,
+  ): Signal<H>;
+  public pipe<A, B, C, D, E, F, G, H, I>(
+    fn1: (payload: T) => A,
+    fn2: (payload: A) => B,
+    fn3: (payload: B) => C,
+    fn4: (payload: C) => D,
+    fn5: (payload: D) => E,
+    fn6: (payload: E) => F,
+    fn7: (payload: F) => G,
+    fn8: (payload: G) => H,
+    fn9: (payload: H) => I,
+  ): Signal<I>;
+  // Implementation
+  // deno-lint-ignore no-explicit-any
+  public pipe(...fns: ((payload: any) => any)[]): Signal<any> {
+    // deno-lint-ignore no-explicit-any
+    const pipedSignal = new Signal<any>();
+
+    this.attach((payload) => {
+      let result = payload;
+      for (const fn of fns) {
+        result = fn(result);
+      }
+      pipedSignal.post(result);
+    });
+
+    return pipedSignal;
+  }
+
   // Create a StatefulSignal that tracks this Signal's emissions
   public toStateful(initialState: T): StatefulSignal<T> {
     const stateful = new StatefulSignal<T>(initialState);
