@@ -2,7 +2,7 @@
 
 Typescript-safe signals with minimal footprint, AbortController support, and advanced utility functions.
 
-A modern, fast, and fully type-safe event-emitter replacement designed for building robust and scalable applications. Featuring simple subscription mechanisms, Promisified `waitFor`, automatic type-guards via `filter`, and stateful properties.
+A type-safe event-emitter replacement with simple subscriptions, Promisified `waitFor`, type-guard `filter`, and stateful signals.
 
 ![npm](https://img.shields.io/npm/v/ts-signal)
 ![license](https://img.shields.io/npm/l/ts-signal)
@@ -35,18 +35,14 @@ pnpm add ts-signal
 ```typescript
 import { Signal } from "ts-signal";
 
-// 1. Create a signal
 const onUserLogin = new Signal<{ id: string; name: string }>();
 
-// 2. Attach a handler
 const unsubscribe = onUserLogin.attach((user) => {
   console.log(`Welcome, ${user.name}!`);
 });
 
-// 3. Post an event
 onUserLogin.post({ id: "123", name: "Alice" });
 
-// 4. Unsubscribe when done
 unsubscribe();
 ```
 
@@ -99,7 +95,7 @@ onReady.post(); // Nothing is logged
 Returns a Promise that resolves with the next emitted payload.
 
 - Throws a `SignalTimeoutError` if `timeout` in ms is provided and elapsed.
-- Can be preemptively aborted via an `AbortSignal`.
+- Throws a `SignalAbortError` if the `AbortSignal` is aborted.
 
 ```typescript
 const onReady = new Signal<void>();
@@ -115,17 +111,17 @@ try {
 
 #### `detach(handler?: (payload: T) => void): void`
 
-Removes a specific handler. If no handler is provided, **clears all attached handlers**.
+Removes a specific handler. If no handler is provided, **clears all attached handlers**. On derived signals (`filter`, `pipe`, `toStateful`), this also tears down the parent subscription when handlers drop to zero.
 
 #### `post(payload: T): void`
 
-Emits the payload synchronously to all currently attached handlers. Iteration over handlers is perfectly safe even if handlers mutate the listener list during their execution tick.
+Emits the payload synchronously to all currently attached handlers. Safe to call even if handlers attach or detach other handlers during emission.
 
 #### `filter(predicate)`
 
-Returns a new filtered derived child `Signal`. Highly suitable for deep workflows.
+Returns a new derived `Signal` that only emits values matching the predicate.
 
-Supports **TypeScript Type Guards** to automatically narrow down the payload!
+Supports **TypeScript Type Guards** to automatically narrow the payload type.
 
 ```typescript
 const incoming = new Signal<string | number>();
@@ -138,18 +134,46 @@ stringOnly.attach((str) => {
 });
 ```
 
+With discriminated unions, TypeScript narrows the type automatically — no type guard needed:
+
+```typescript
+type Event =
+  | { type: "message"; text: string }
+  | { type: "error"; code: number };
+
+const events = new Signal<Event>();
+
+const errors = events.filter((e) => e.type === "error");
+errors.attach((e) => console.log(e.code)); // `e` is narrowed, `code` is available
+```
+
 #### `pipe(...fns)`
 
 Returns a new derived `Signal` by piping the emitted values through one or more transform functions. Strongly typed for up to 9 functions.
 
 ```typescript
-const signal = new Signal<{type: 'message', message: string}>();
+const signal = new Signal<{ type: "message"; message: string }>();
 
 // messages is inferred as Signal<string>
-const messages = signal.pipe(event => event.message);
+const messages = signal.pipe((event) => event.message);
 
-messages.attach(msg => console.log(msg));
-signal.post({type: 'message', message: 'Hello!'}); // Logs: "Hello!"
+messages.attach((msg) => console.log(msg));
+signal.post({ type: "message", message: "Hello!" }); // Logs: "Hello!"
+```
+
+Chaining multiple transforms:
+
+```typescript
+const signal = new Signal<number>();
+
+const labels = signal.pipe(
+  (n) => n * 2,
+  (n) => `Value: ${n}`,
+);
+
+labels.attach(console.log);
+signal.post(5); // Logs: "Value: 10"
+signal.post(15); // Logs: "Value: 30"
 ```
 
 #### `toStateful(initialState: T): StatefulSignal<T>`
@@ -172,7 +196,7 @@ Synchronously accessible current state property.
 
 #### `attach(handler: (payload: T) => void, signal?: AbortSignal): () => void`
 
-Attaches a handler and **immediately invokes it** with the current `.state` unless the passed `AbortSignal` is already active. Continues to trigger on further updates exactly like a standard `Signal`.
+Attaches a handler and **immediately invokes it** with the current `.state` unless the passed `AbortSignal` is already aborted. Continues to trigger on further updates exactly like a standard `Signal`.
 
 ```typescript
 const userScore = new StatefulSignal<number>(0);
@@ -186,7 +210,7 @@ userScore.post(10);
 
 #### `waitFor(timeout?: number, signal?: AbortSignal): Promise<T>`
 
-Like `Signal.waitFor`, but resolves **immediately** with the current state. Therefore, timeouts are essentially bypassed.
+Like `Signal.waitFor`, but resolves **immediately** with the current state. Since it resolves immediately, the timeout has no effect.
 
 ---
 
@@ -231,10 +255,13 @@ class ReactiveComponent {
 Derived signals created by `filter`, `pipe`, and `toStateful` are **cold** — they only subscribe to the parent signal while they have active handlers, and automatically unsubscribe when the last handler detaches. Once unsubscribed, the derived signal becomes eligible for garbage collection.
 
 This means that doing:
+
 ```typescript
-await incoming.filter(x => x.type === "message").waitFor();
+await incoming.filter((x) => x.type === "message").waitFor();
 ```
-Is 100% memory-leak free out of the box because:
+
+Is memory-leak free out of the box because:
+
 1. The derived signal only subscribes to the parent when `.waitFor()` internally calls `.attachOnce()`.
 2. When the promise resolves, `.attachOnce()` drops the listener count to `0`.
 3. The derived signal detects this, unsubscribes from the parent signal, and becomes eligible for garbage collection.
