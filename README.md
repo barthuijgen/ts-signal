@@ -6,7 +6,8 @@ A modern, fast, and fully type-safe event-emitter replacement designed for build
 
 ![npm](https://img.shields.io/npm/v/ts-signal)
 ![license](https://img.shields.io/npm/l/ts-signal)
-![typescript](https://img.shields.io/badge/TypeScript-Ready-blue)
+![minified](https://img.badgesize.io/https://cdn.jsdelivr.net/npm/ts-signal/dist/index.min.js)
+![NPM Downloads](https://img.shields.io/npm/dw/ts-signal)
 
 ## Features
 
