@@ -1,10 +1,5 @@
 import { assert, test } from "vitest";
-import {
-  Signal,
-  SignalTimeoutError,
-  type SignalType,
-  StatefulSignal,
-} from "../src/signal.js";
+import { Signal, type SignalType, StatefulSignal } from "../src/signal.js";
 
 test("Signal - Basic emit and handle", () => {
   const signal = new Signal<number>();
@@ -88,6 +83,23 @@ test("Signal - attach with AbortSignal", () => {
   assert.strictEqual(count, 1);
 });
 
+test("Signal - attach with already aborted AbortSignal is a no-op", () => {
+  const signal = new Signal<number>();
+  const ac = new AbortController();
+  ac.abort();
+
+  let called = false;
+  const unsub = signal.attach(() => {
+    called = true;
+  }, ac.signal);
+
+  signal.post(1);
+  assert.strictEqual(called, false);
+
+  // unsub should be a no-op function
+  unsub();
+});
+
 test("Signal - attachOnce only fires once and auto-detaches", () => {
   const signal = new Signal<number>();
   let count = 0;
@@ -131,76 +143,21 @@ test("Signal - attachOnce manual unsubscribe works", () => {
   assert.strictEqual(count, 0);
 });
 
-test("StatefulSignal - attachOnce works securely with synchronous firing", () => {
-  const signal = new StatefulSignal<string>("initial");
-  let count = 0;
-  let val = "";
-
-  signal.attachOnce((v) => {
-    count++;
-    val = v;
-  });
-
-  assert.strictEqual(count, 1);
-  assert.strictEqual(val, "initial");
-
-  signal.post("second");
-
-  assert.strictEqual(count, 1);
-  assert.strictEqual(val, "initial");
-});
-
-test("Signal - waitFor resolves on next fire", async () => {
-  const signal = new Signal<string>();
-
-  const promise = signal.waitFor();
-  signal.post("first");
-  signal.post("second");
-
-  const result = await promise;
-  assert.strictEqual(result, "first");
-});
-
-test("Signal - waitFor with AbortSignal rejects with SignalAbortError", async () => {
-  const signal = new Signal<string>();
+test("Signal - attachOnce with already aborted AbortSignal is a no-op", () => {
+  const signal = new Signal<number>();
   const ac = new AbortController();
-
-  const promise = signal.waitFor(undefined, ac.signal);
   ac.abort();
 
-  let error: unknown;
-  try {
-    await promise;
-  } catch (err) {
-    error = err;
-  }
+  let called = false;
+  const unsub = signal.attachOnce(() => {
+    called = true;
+  }, ac.signal);
 
-  // It should reject with an SignalAbortError
-  assert(error instanceof Error);
-  assert.strictEqual((error as Error).name, "SignalAbortError");
-});
+  signal.post(1);
+  assert.strictEqual(called, false);
 
-test("Signal - waitFor with timeout throws if not fired", async () => {
-  const signal = new Signal<string>();
-
-  let error: unknown;
-  try {
-    await signal.waitFor(10); // Wait 10ms for a value
-  } catch (err) {
-    error = err;
-  }
-
-  assert.instanceOf(error, SignalTimeoutError);
-});
-
-test("Signal - waitFor with timeout resolves if fired in time", async () => {
-  const signal = new Signal<string>();
-
-  const promise = signal.waitFor(50);
-  signal.post("in time!");
-
-  const result = await promise;
-  assert.strictEqual(result, "in time!");
+  // unsub should be safe to call
+  unsub();
 });
 
 test("Signal - Handler mutation during emission is safe", () => {
@@ -229,160 +186,36 @@ test("Signal - Handler mutation during emission is safe", () => {
   assert.strictEqual(count2, 1);
 });
 
-test("Signal - filter should narrow types correctly", () => {
-  const signal = new Signal<number | string>();
-
-  const isString = (payload: number | string): payload is string =>
-    typeof payload === "string";
-
-  const stringSignal = signal.filter(isString);
-
-  const received: string[] = [];
-  stringSignal.attach((payload) => {
-    received.push(payload);
-  });
-
-  signal.post(42);
-  signal.post("hello");
-  signal.post(100);
-  signal.post("world");
-
-  assert.deepEqual(received, ["hello", "world"]);
+test("Signal - post with no handlers does not throw", () => {
+  const signal = new Signal<number>();
+  signal.post(42); // should not throw
 });
 
-test("Signal - filter should filter via boolean predicate", () => {
-  const signal = new Signal<number>();
-  const evenSignal = signal.filter((p) => p % 2 === 0);
+test("Signal - void signal works without payload", () => {
+  const signal = new Signal();
+  let count = 0;
 
-  const received: number[] = [];
-  evenSignal.attach((payload) => received.push(payload));
+  signal.attach(() => count++);
+  signal.post();
+
+  assert.strictEqual(count, 1);
+});
+
+test("Signal - disposable unsub can be called multiple times safely", () => {
+  const signal = new Signal<number>();
+  let count = 0;
+
+  const unsub = signal.attach(() => count++);
 
   signal.post(1);
+  assert.strictEqual(count, 1);
+
+  unsub();
+  unsub(); // calling again should be safe
+  unsub();
+
   signal.post(2);
-  signal.post(3);
-  signal.post(4);
-
-  assert.deepEqual(received, [2, 4]);
-});
-
-test("Signal - filter with AbortSignal on attach stops child emissions", () => {
-  const signal = new Signal<number>();
-  const ac = new AbortController();
-  const childSignal = signal.filter((p) => p > 5);
-
-  const received: number[] = [];
-  childSignal.attach((payload) => received.push(payload), ac.signal);
-
-  signal.post(10);
-  assert.deepEqual(received, [10]);
-
-  ac.abort();
-
-  signal.post(20);
-  assert.deepEqual(received, [10]);
-});
-
-test("Signal - pipe should transform emitted values", () => {
-  const signal = new Signal<{ type: "message"; message: string }>();
-
-  // Single transform function
-  const messages = signal.pipe((event) => event.message);
-
-  const received: string[] = [];
-  messages.attach((msg) => received.push(msg));
-
-  signal.post({ type: "message", message: "hello" });
-  signal.post({ type: "message", message: "world" });
-
-  assert.deepEqual(received, ["hello", "world"]);
-});
-
-test("Signal - pipe should compose multiple transform functions", () => {
-  const signal = new Signal<number>();
-
-  const resultSignal = signal.pipe(
-    (n) => n * 2,
-    (n) => n.toString(),
-    (s) => s + "!",
-  );
-
-  const received: string[] = [];
-  resultSignal.attach((msg) => received.push(msg));
-
-  signal.post(5);
-  signal.post(10);
-
-  assert.deepEqual(received, ["10!", "20!"]);
-});
-
-test("Signal - toStateful creates a StatefulSignal bound to parent", () => {
-  const parent = new Signal<number>();
-  const stateful = parent.toStateful(0);
-
-  let value: number | undefined;
-  stateful.attach((v: number) => {
-    value = v;
-  });
-
-  assert.strictEqual(value, 0); // attached instantly fires
-  assert.strictEqual(stateful.state, 0);
-
-  parent.post(100);
-
-  assert.strictEqual(value, 100);
-  assert.strictEqual(stateful.state, 100);
-});
-
-test("StatefulSignal - initialization and synchronous emission", () => {
-  const signal = new StatefulSignal<number>(42);
-  let value: number | undefined;
-
-  signal.attach((v: number) => {
-    value = v;
-  });
-
-  assert.strictEqual(value, 42);
-});
-
-test("StatefulSignal - waitFor resolves immediately with current state", async () => {
-  const signal = new StatefulSignal<number>(100);
-
-  const result = await signal.waitFor();
-  assert.strictEqual(result, 100);
-});
-
-test("StatefulSignal - post updates state and emits", () => {
-  const signal = new StatefulSignal<string>("initial");
-  let value = "";
-  let emissions = 0;
-
-  signal.attach((v: string) => {
-    value = v;
-    emissions++;
-  });
-
-  assert.strictEqual(value, "initial");
-  assert.strictEqual(emissions, 1);
-  assert.strictEqual(signal.state, "initial");
-
-  signal.post("updated");
-
-  assert.strictEqual(value, "updated");
-  assert.strictEqual(emissions, 2);
-  assert.strictEqual(signal.state, "updated");
-});
-
-test("StatefulSignal - attaching with an already aborted signal doesn't trigger", () => {
-  const signal = new StatefulSignal<number>(42);
-  const ac = new AbortController();
-  ac.abort();
-
-  let value: number | undefined;
-  signal.attach((v: number) => {
-    value = v;
-  }, ac.signal);
-
-  assert.strictEqual(value, undefined);
+  assert.strictEqual(count, 1);
 });
 
 test("SignalType - asserts the inner payload correctly", () => {

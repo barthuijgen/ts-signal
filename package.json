@@ -29,9 +29,11 @@
   ],
   "scripts": {
     "build": "tsc --emitDeclarationOnly && rolldown -c rolldown.config.ts",
-    "test": "NODE_OPTIONS=\"--expose-gc\" vitest run"
+    "test": "NODE_OPTIONS=\"--expose-gc\" vitest run",
+    "test:coverage": "NODE_OPTIONS=\"--expose-gc\" vitest run --coverage"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
     "rolldown": "1.0.0-rc.8",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
