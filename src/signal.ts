@@ -142,6 +142,10 @@ export class Signal<T = void> {
     } else {
       this.#handlers.clear();
     }
+
+    if (this.#handlers.size === 0 && this.onLastDetach) {
+      this.onLastDetach();
+    }
   }
 
   // Emit the event
