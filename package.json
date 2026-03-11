@@ -1,6 +1,6 @@
 {
   "name": "ts-signal",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "description": "Typescript-safe signals with utility functions",
   "author": "Bart Huijgen",
   "repository": {
