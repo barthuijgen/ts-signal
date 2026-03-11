@@ -16,7 +16,7 @@ A modern, fast, and fully type-safe event-emitter replacement designed for build
 - **AbortController Support**: Native support for memory-leak-free unsubscription.
 - **Promise Integrated**: Wait for the next emission with timeouts out-of-the-box.
 - **Stateful Signals**: Built-in support for values that persist across events.
-- **Mutation Safe**: Resilient against handler modifications during dispatch ticks.
+- **Automatic Memory Cleanup**: Zero-leak derived signals (`filter`, `pipe`) via lazy evaluation and `WeakRef` garbage collection.
 
 ## Installation
 
@@ -61,6 +61,10 @@ unsubscribe();
 
 The core event dispatcher. If the payload is empty, use `Signal<void>`.
 
+#### `setMaxHandlers(count: number): void`
+
+Sets the maximum number of attached listeners before emitting a console warning. Useful for detecting memory leaks. Defaults to `20`.
+
 #### `attach(handler: (payload: T) => void, signal?: AbortSignal): () => void`
 
 Registers a callback to be invoked whenever the signal emits. Returns an unsubscribe function.
@@ -76,6 +80,18 @@ onData.post("Hello!"); // Logs: "Hello!"
 
 ac.abort(); // Automatically unsubscribes
 onData.post("World!"); // Nothing is logged
+```
+
+#### `attachOnce(handler: (payload: T) => void, signal?: AbortSignal): () => void`
+
+Registers a callback similar to `attach`, but it automatically unsubscribes itself immediately after the very first execution.
+
+```typescript
+const onReady = new Signal<void>();
+
+onReady.attachOnce(() => console.log("Ready!"));
+onReady.post(); // Logs: "Ready!"
+onReady.post(); // Nothing is logged
 ```
 
 #### `waitFor(timeout?: number, signal?: AbortSignal): Promise<T>`
@@ -209,3 +225,17 @@ class ReactiveComponent {
   }
 }
 ```
+
+#### Safe Derived Signals (Cold Signals & WeakRefs)
+
+Functions that return a derived `Signal` (like `filter`, `pipe`, and `toStateful`) are implemented using lazy initialization and `WeakRef` garbage collection tracking. 
+
+This means that doing:
+```typescript
+await incoming.filter(x => x.type === "message").waitFor();
+```
+Is 100% memory-leak free out of the box because:
+1. The derived signal only subscribes to the parent when `.waitFor()` internally calls `.attachOnce()`.
+2. When the promise resolves, `.attachOnce()` drops the listener to `0`. 
+3. The derived signal detects this and unsubscribes from the parent signal instantly.
+4. If a reference to the derived signal was completely lost by user-code, the internal V8 Garbage Collector also acts as a fallback cleanup mechanism because the parent only holds a `WeakRef` closure.

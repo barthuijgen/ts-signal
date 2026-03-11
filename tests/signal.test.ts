@@ -88,6 +88,68 @@ test("Signal - attach with AbortSignal", () => {
   assert.strictEqual(count, 1);
 });
 
+test("Signal - attachOnce only fires once and auto-detaches", () => {
+  const signal = new Signal<number>();
+  let count = 0;
+  let lastVal = 0;
+
+  signal.attachOnce((val) => {
+    count++;
+    lastVal = val;
+  });
+
+  signal.post(1);
+  signal.post(2);
+  signal.post(3);
+
+  assert.strictEqual(count, 1);
+  assert.strictEqual(lastVal, 1);
+});
+
+test("Signal - attachOnce respects AbortSignal before emitting", () => {
+  const signal = new Signal<void>();
+  let count = 0;
+
+  const ac = new AbortController();
+  signal.attachOnce(() => count++, ac.signal);
+
+  ac.abort();
+  signal.post();
+
+  assert.strictEqual(count, 0);
+});
+
+test("Signal - attachOnce manual unsubscribe works", () => {
+  const signal = new Signal<void>();
+  let count = 0;
+
+  const unsub = signal.attachOnce(() => count++);
+  unsub();
+
+  signal.post();
+
+  assert.strictEqual(count, 0);
+});
+
+test("StatefulSignal - attachOnce works securely with synchronous firing", () => {
+  const signal = new StatefulSignal<string>("initial");
+  let count = 0;
+  let val = "";
+
+  signal.attachOnce((v) => {
+    count++;
+    val = v;
+  });
+
+  assert.strictEqual(count, 1);
+  assert.strictEqual(val, "initial");
+
+  signal.post("second");
+
+  assert.strictEqual(count, 1);
+  assert.strictEqual(val, "initial");
+});
+
 test("Signal - waitFor resolves on next fire", async () => {
   const signal = new Signal<string>();
 
@@ -114,10 +176,7 @@ test("Signal - waitFor with AbortSignal rejects with SignalAbortError", async ()
   }
 
   // It should reject with an SignalAbortError
-  assert(
-    error instanceof Error ||
-      (typeof DOMException !== "undefined" && error instanceof DOMException),
-  );
+  assert(error instanceof Error);
   assert.strictEqual((error as Error).name, "SignalAbortError");
 });
 

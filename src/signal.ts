@@ -13,7 +13,16 @@ export class SignalAbortError extends Error {
 }
 
 export class Signal<T = void> {
-  private handlers = new Set<(payload: T) => void>();
+  #handlers = new Set<(payload: T) => void>();
+  #maxHandlers = 20;
+
+  // Lifecycle hooks for derived signals
+  protected onFirstAttach?(): void;
+  protected onLastDetach?(): void;
+
+  public setMaxHandlers(count: number): void {
+    this.#maxHandlers = count;
+  }
 
   // Attach a handler, optionally binding it to a context
   public attach(
@@ -24,14 +33,58 @@ export class Signal<T = void> {
       return () => {};
     }
 
-    this.handlers.add(handler);
+    const isFirst = this.#handlers.size === 0;
+
+    this.#handlers.add(handler);
+
+    if (this.#maxHandlers > 0 && this.#handlers.size > this.#maxHandlers) {
+      console.warn(
+        `Warning: Signal has exceeded the maximum of ${this.#maxHandlers} handlers. This could indicate a memory leak. Use signal.setMaxHandlers(n) to increase the limit.`,
+      );
+    }
+
+    // Trigger lazy setup for cold signals
+    if (isFirst && this.onFirstAttach) {
+      this.onFirstAttach();
+    }
 
     const unsubscribe = () => {
-      this.handlers.delete(handler);
+      this.#handlers.delete(handler);
+
+      // Trigger lazy teardown if we hit 0 listeners
+      if (this.#handlers.size === 0 && this.onLastDetach) {
+        this.onLastDetach();
+      }
+
       signal?.removeEventListener("abort", unsubscribe);
     };
 
     signal?.addEventListener("abort", unsubscribe);
+    return unsubscribe;
+  }
+
+  // Attach a handler that will only be executed once
+  public attachOnce(
+    handler: (payload: T) => void,
+    signal?: AbortSignal,
+  ): () => void {
+    if (signal?.aborted) {
+      return () => {};
+    }
+
+    let fired = false;
+    let unsubscribe: (() => void) | undefined;
+
+    unsubscribe = this.attach((payload) => {
+      fired = true;
+      if (unsubscribe) unsubscribe();
+      handler(payload);
+    }, signal);
+
+    if (fired && unsubscribe) {
+      unsubscribe();
+    }
+
     return unsubscribe;
   }
 
@@ -43,32 +96,27 @@ export class Signal<T = void> {
       }
 
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      let unsubscribe: (() => void) | undefined;
       let fired = false;
 
       const abortHandler = () => {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
-        if (unsubscribe) unsubscribe();
+        unsubscribe();
         reject(new SignalAbortError(signal?.reason));
       };
 
       signal?.addEventListener("abort", abortHandler);
 
-      unsubscribe = this.attach((payload) => {
+      const unsubscribe = this.attachOnce((payload) => {
         fired = true;
         signal?.removeEventListener("abort", abortHandler);
         if (timeoutId !== undefined) clearTimeout(timeoutId);
-        if (unsubscribe) unsubscribe(); // Self-destruct if assigned
         resolve(payload);
       }, signal);
 
-      // If the handler fired synchronously during attach, unsubscribe was undefined during the execution
-      if (fired) {
-        if (unsubscribe) unsubscribe();
-      } else if (timeout !== undefined) {
+      if (!fired && timeout !== undefined) {
         timeoutId = setTimeout(() => {
           signal?.removeEventListener("abort", abortHandler);
-          if (unsubscribe) unsubscribe();
+          unsubscribe();
           reject(new SignalTimeoutError());
         }, timeout);
       }
@@ -78,9 +126,9 @@ export class Signal<T = void> {
   // Detach a specific handler, or clear ALL handlers if no argument is passed
   public detach(handler?: (payload: T) => void): void {
     if (handler) {
-      this.handlers.delete(handler);
+      this.#handlers.delete(handler);
     } else {
-      this.handlers.clear();
+      this.#handlers.clear();
     }
   }
 
@@ -89,7 +137,7 @@ export class Signal<T = void> {
     // We copy the set into an array `[...this.handlers]` before iterating.
     // This prevents infinite loops or skipped handlers if a handler
     // attaches/detaches other handlers during the emission tick.
-    for (const handler of [...this.handlers]) {
+    for (const handler of [...this.#handlers]) {
       handler(payload);
     }
   }
@@ -111,13 +159,34 @@ export class Signal<T = void> {
   public filter(predicate: (payload: T) => boolean, signal?: AbortSignal): any {
     // deno-lint-ignore no-explicit-any
     const filteredSignal = new Signal<any>();
+    const weakRef = new WeakRef(filteredSignal);
 
-    // Listen to the parent signal, but only emit on the child if predicate passes
-    this.attach((payload) => {
-      if (predicate(payload)) {
-        filteredSignal.post(payload);
+    let sub: (() => void) | undefined;
+
+    filteredSignal.onFirstAttach = () => {
+      // Listen to the parent signal, but only emit on the child if predicate passes
+      sub = this.attach((payload) => {
+        const sig = weakRef.deref();
+        if (sig) {
+          if (predicate(payload)) {
+            sig.post(payload);
+          }
+        } else {
+          // GC'd, self-destruct
+          if (sub) {
+            sub();
+            sub = undefined;
+          }
+        }
+      }, signal);
+    };
+
+    filteredSignal.onLastDetach = () => {
+      if (sub) {
+        sub();
+        sub = undefined;
       }
-    }, signal);
+    };
 
     return filteredSignal;
   }
@@ -186,14 +255,35 @@ export class Signal<T = void> {
   public pipe(...fns: ((payload: any) => any)[]): Signal<any> {
     // deno-lint-ignore no-explicit-any
     const pipedSignal = new Signal<any>();
+    const weakRef = new WeakRef(pipedSignal);
 
-    this.attach((payload) => {
-      let result = payload;
-      for (const fn of fns) {
-        result = fn(result);
+    let sub: (() => void) | undefined;
+
+    pipedSignal.onFirstAttach = () => {
+      sub = this.attach((payload) => {
+        const sig = weakRef.deref();
+        if (sig) {
+          let result = payload;
+          for (const fn of fns) {
+            result = fn(result);
+          }
+          sig.post(result);
+        } else {
+          // GC'd, self-destruct
+          if (sub) {
+            sub();
+            sub = undefined;
+          }
+        }
+      });
+    };
+
+    pipedSignal.onLastDetach = () => {
+      if (sub) {
+        sub();
+        sub = undefined;
       }
-      pipedSignal.post(result);
-    });
+    };
 
     return pipedSignal;
   }
@@ -201,7 +291,24 @@ export class Signal<T = void> {
   // Create a StatefulSignal that tracks this Signal's emissions
   public toStateful(initialState: T): StatefulSignal<T> {
     const stateful = new StatefulSignal<T>(initialState);
-    this.attach((payload) => stateful.post(payload));
+    const weakRef = new WeakRef(stateful);
+
+    // We do NOT use onFirstAttach/onLastDetach here because StatefulSignal needs
+    // to track emissions constantly to maintain its state correctly. We just use
+    // WeakRef so it gets garbage collected if the user loses all references to it.
+    let sub: (() => void) | undefined;
+    sub = this.attach((payload) => {
+      const sig = weakRef.deref();
+      if (sig) {
+        sig.post(payload);
+      } else {
+        if (sub) {
+          sub();
+          sub = undefined;
+        }
+      }
+    });
+
     return stateful;
   }
 }
