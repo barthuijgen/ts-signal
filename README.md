@@ -65,17 +65,24 @@ Sets the maximum number of attached listeners before emitting a console warning.
 
 Registers a callback to be invoked whenever the signal emits. Returns an unsubscribe function.
 
-- **Tip:** Pass an `AbortSignal` for automatic and scalable unsubscription!
+```typescript
+const onData = new Signal<string>();
+
+const unsub = onData.attach((data) => console.log(data));
+onData.post("Hello!"); // Logs: "Hello!"
+
+unsub();
+onData.post("World!"); // Nothing logged
+```
+
+Pass an `AbortSignal` for automatic cleanup:
 
 ```typescript
 const ac = new AbortController();
 const onData = new Signal<string>();
 
 onData.attach((data) => console.log(data), ac.signal);
-onData.post("Hello!"); // Logs: "Hello!"
-
 ac.abort(); // Automatically unsubscribes
-onData.post("World!"); // Nothing is logged
 ```
 
 #### `attachOnce(handler: (payload: T) => void, signal?: AbortSignal): () => void`
