@@ -24,6 +24,29 @@ test("filter - narrows types correctly with type guard", () => {
   assert.deepEqual(received, ["hello", "world"]);
 });
 
+test("filter - narrows discriminated unions without explicit type guard", () => {
+  type Event =
+    | { type: "message"; text: string }
+    | { type: "error"; code: number };
+
+  const events = new Signal<Event>();
+  const errors = events.filter((e) => e.type === "error");
+
+  const codes: number[] = [];
+  errors.attach((e) => {
+    // This assignment verifies TS narrowed `e` to the error variant.
+    // If filter doesn't narrow, `e.code` would be a type error.
+    const code: number = e.code;
+    codes.push(code);
+  });
+
+  events.post({ type: "message", text: "hi" });
+  events.post({ type: "error", code: 404 });
+  events.post({ type: "error", code: 500 });
+
+  assert.deepEqual(codes, [404, 500]);
+});
+
 test("filter - filters via boolean predicate", () => {
   const signal = new Signal<number>();
   const evenSignal = signal.filter((p) => p % 2 === 0);
