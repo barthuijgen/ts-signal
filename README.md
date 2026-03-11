@@ -16,7 +16,7 @@ A modern, fast, and fully type-safe event-emitter replacement designed for build
 - **AbortController Support**: Native support for memory-leak-free unsubscription.
 - **Promise Integrated**: Wait for the next emission with timeouts out-of-the-box.
 - **Stateful Signals**: Built-in support for values that persist across events.
-- **Automatic Memory Cleanup**: Zero-leak derived signals (`filter`, `pipe`) via lazy evaluation and `WeakRef` garbage collection.
+- **Automatic Memory Cleanup**: Zero-leak derived signals (`filter`, `pipe`, `toStateful`) via lazy evaluation and automatic lifecycle management.
 
 ## Installation
 
@@ -154,7 +154,7 @@ signal.post({type: 'message', message: 'Hello!'}); // Logs: "Hello!"
 
 #### `toStateful(initialState: T): StatefulSignal<T>`
 
-Returns a new `StatefulSignal` paired to this generic signal, inherently proxying all new values into the stateful wrapper.
+Returns a new `StatefulSignal` derived from this signal. The stateful signal only subscribes to the parent while it has active handlers, and automatically unsubscribes when the last handler detaches.
 
 ---
 
@@ -226,9 +226,9 @@ class ReactiveComponent {
 }
 ```
 
-#### Safe Derived Signals (Cold Signals & WeakRefs)
+#### Safe Derived Signals (Cold Signals)
 
-Functions that return a derived `Signal` (like `filter`, `pipe`, and `toStateful`) are implemented using lazy initialization and `WeakRef` garbage collection tracking. 
+Derived signals created by `filter`, `pipe`, and `toStateful` are **cold** — they only subscribe to the parent signal while they have active handlers, and automatically unsubscribe when the last handler detaches. Once unsubscribed, the derived signal becomes eligible for garbage collection.
 
 This means that doing:
 ```typescript
@@ -236,6 +236,5 @@ await incoming.filter(x => x.type === "message").waitFor();
 ```
 Is 100% memory-leak free out of the box because:
 1. The derived signal only subscribes to the parent when `.waitFor()` internally calls `.attachOnce()`.
-2. When the promise resolves, `.attachOnce()` drops the listener to `0`. 
-3. The derived signal detects this and unsubscribes from the parent signal instantly.
-4. If a reference to the derived signal was completely lost by user-code, the internal V8 Garbage Collector also acts as a fallback cleanup mechanism because the parent only holds a `WeakRef` closure.
+2. When the promise resolves, `.attachOnce()` drops the listener count to `0`.
+3. The derived signal detects this, unsubscribes from the parent signal, and becomes eligible for garbage collection.

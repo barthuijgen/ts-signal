@@ -29,7 +29,7 @@
   ],
   "scripts": {
     "build": "tsc --emitDeclarationOnly && rolldown -c rolldown.config.ts",
-    "test": "vitest run"
+    "test": "NODE_OPTIONS=\"--expose-gc\" vitest run"
   },
   "devDependencies": {
     "rolldown": "1.0.0-rc.8",

@@ -12,6 +12,18 @@ export class SignalAbortError extends Error {
   }
 }
 
+/** Wraps a function so that calling the wrapper nulls out the inner reference */
+function disposable(fn: () => void): () => void {
+  let inner: (() => void) | undefined = fn;
+  return () => {
+    if (inner) {
+      const f = inner;
+      inner = undefined;
+      f();
+    }
+  };
+}
+
 export class Signal<T = void> {
   #handlers = new Set<(payload: T) => void>();
   #maxHandlers = 20;
@@ -48,7 +60,7 @@ export class Signal<T = void> {
       this.onFirstAttach();
     }
 
-    const unsubscribe = () => {
+    const unsub = disposable(() => {
       this.#handlers.delete(handler);
 
       // Trigger lazy teardown if we hit 0 listeners
@@ -56,11 +68,11 @@ export class Signal<T = void> {
         this.onLastDetach();
       }
 
-      signal?.removeEventListener("abort", unsubscribe);
-    };
+      signal?.removeEventListener("abort", unsub);
+    });
 
-    signal?.addEventListener("abort", unsubscribe);
-    return unsubscribe;
+    signal?.addEventListener("abort", unsub);
+    return unsub;
   }
 
   // Attach a handler that will only be executed once
@@ -155,28 +167,14 @@ export class Signal<T = void> {
   ): Signal<T>;
 
   // Implementation
-  // deno-lint-ignore no-explicit-any
   public filter(predicate: (payload: T) => boolean, signal?: AbortSignal): any {
-    // deno-lint-ignore no-explicit-any
     const filteredSignal = new Signal<any>();
-    const weakRef = new WeakRef(filteredSignal);
-
     let sub: (() => void) | undefined;
 
     filteredSignal.onFirstAttach = () => {
-      // Listen to the parent signal, but only emit on the child if predicate passes
       sub = this.attach((payload) => {
-        const sig = weakRef.deref();
-        if (sig) {
-          if (predicate(payload)) {
-            sig.post(payload);
-          }
-        } else {
-          // GC'd, self-destruct
-          if (sub) {
-            sub();
-            sub = undefined;
-          }
+        if (predicate(payload)) {
+          filteredSignal.post(payload);
         }
       }, signal);
     };
@@ -251,30 +249,17 @@ export class Signal<T = void> {
     fn9: (payload: H) => I,
   ): Signal<I>;
   // Implementation
-  // deno-lint-ignore no-explicit-any
   public pipe(...fns: ((payload: any) => any)[]): Signal<any> {
-    // deno-lint-ignore no-explicit-any
     const pipedSignal = new Signal<any>();
-    const weakRef = new WeakRef(pipedSignal);
-
     let sub: (() => void) | undefined;
 
     pipedSignal.onFirstAttach = () => {
       sub = this.attach((payload) => {
-        const sig = weakRef.deref();
-        if (sig) {
-          let result = payload;
-          for (const fn of fns) {
-            result = fn(result);
-          }
-          sig.post(result);
-        } else {
-          // GC'd, self-destruct
-          if (sub) {
-            sub();
-            sub = undefined;
-          }
+        let result = payload;
+        for (const fn of fns) {
+          result = fn(result);
         }
+        pipedSignal.post(result);
       });
     };
 
@@ -291,23 +276,20 @@ export class Signal<T = void> {
   // Create a StatefulSignal that tracks this Signal's emissions
   public toStateful(initialState: T): StatefulSignal<T> {
     const stateful = new StatefulSignal<T>(initialState);
-    const weakRef = new WeakRef(stateful);
-
-    // We do NOT use onFirstAttach/onLastDetach here because StatefulSignal needs
-    // to track emissions constantly to maintain its state correctly. We just use
-    // WeakRef so it gets garbage collected if the user loses all references to it.
     let sub: (() => void) | undefined;
-    sub = this.attach((payload) => {
-      const sig = weakRef.deref();
-      if (sig) {
-        sig.post(payload);
-      } else {
-        if (sub) {
-          sub();
-          sub = undefined;
-        }
+
+    stateful.onFirstAttach = () => {
+      sub = this.attach((payload) => {
+        stateful.post(payload);
+      });
+    };
+
+    stateful.onLastDetach = () => {
+      if (sub) {
+        sub();
+        sub = undefined;
       }
-    });
+    };
 
     return stateful;
   }
